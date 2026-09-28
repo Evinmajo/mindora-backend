@@ -32,14 +32,17 @@ const razorpay = new Razorpay({
   key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
 
-// 3. Nodemailer Transporter Setup (Explicit Port & SSL)
+// 3. Nodemailer Transporter Setup (Updated to Port 587 / STARTTLS)
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
-  port: 465,
-  secure: true, // SSL required for port 465
+  port: 587,
+  secure: false, // TLS / STARTTLS required for port 587
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
+  },
+  tls: {
+    rejectUnauthorized: false, // Prevents drops during local/host cert checks
   },
 });
 
@@ -77,6 +80,7 @@ const bookingSchema = new mongoose.Schema({
   },
   paymentId: { type: String, default: '' },
   orderId: { type: String, default: '' },
+  meetLink: { type: String, default: '' },
   createdAt: { type: Date, default: Date.now },
 });
 
@@ -141,7 +145,7 @@ app.post('/api/bookings', async (req, res) => {
   }
 });
 
-// RAZORPAY: Create Payment Order (Includes server-side price lookup & DB order linking)
+// RAZORPAY: Create Payment Order
 app.post('/api/payments/create-order', async (req, res) => {
   try {
     const { bookingId } = req.body;
@@ -150,17 +154,15 @@ app.post('/api/payments/create-order', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Booking ID is required' });
     }
 
-    // 1. Fetch booking directly from DB to verify price securely
     const booking = await Booking.findById(bookingId);
     if (!booking) {
       return res.status(404).json({ success: false, error: 'Booking not found' });
     }
 
-    // Extract numeric amount from the database record (e.g. "₹350" -> 350)
     const numericAmount = parseInt(booking.price.replace(/[^0-9]/g, ''), 10) || 350;
 
     const options = {
-      amount: Math.round(numericAmount * 100), // conversion to paise
+      amount: Math.round(numericAmount * 100),
       currency: 'INR',
       receipt: `rcpt_${bookingId.toString().slice(-8)}_${Date.now()}`,
       notes: {
@@ -170,7 +172,6 @@ app.post('/api/payments/create-order', async (req, res) => {
 
     const order = await createRazorpayOrderWithRetry(options);
 
-    // 2. Save order ID directly to the database immediately upon creation
     booking.orderId = order.id;
     await booking.save();
 
@@ -184,7 +185,7 @@ app.post('/api/payments/create-order', async (req, res) => {
   }
 });
 
-// RAZORPAY: Verify Payment Signature & Confirm Booking (Frontend Checkout Flow)
+// RAZORPAY: Verify Payment Signature & Confirm Booking
 app.post('/api/payments/verify', async (req, res) => {
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature, bookingId } = req.body;
@@ -202,7 +203,6 @@ app.post('/api/payments/verify', async (req, res) => {
         return res.status(404).json({ success: false, error: 'Booking not found' });
       }
 
-      // Check if already confirmed (e.g. by Webhook)
       const isAlreadyConfirmed = existingBooking.status === 'Confirmed';
 
       existingBooking.status = 'Confirmed';
@@ -210,7 +210,6 @@ app.post('/api/payments/verify', async (req, res) => {
       existingBooking.paymentId = razorpay_payment_id;
       await existingBooking.save();
 
-      // Send email only if it hasn't been confirmed yet
       if (!isAlreadyConfirmed) {
         sendConfirmationEmail(existingBooking, razorpay_payment_id).catch((err) =>
           console.error('Email error:', err)
@@ -227,7 +226,7 @@ app.post('/api/payments/verify', async (req, res) => {
   }
 });
 
-// RAZORPAY WEBHOOK: Automatic Server-to-Server Payment Listener
+// RAZORPAY WEBHOOK
 app.post('/api/webhooks/razorpay', async (req, res) => {
   try {
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
@@ -242,7 +241,6 @@ app.post('/api/webhooks/razorpay', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Missing x-razorpay-signature header' });
     }
 
-    // Verify raw body HMAC signature
     const expectedSignature = crypto
       .createHmac('sha256', webhookSecret)
       .update(req.rawBody)
@@ -285,7 +283,6 @@ app.post('/api/webhooks/razorpay', async (req, res) => {
       }
     }
 
-    // Return 200 OK immediately so Razorpay knows the webhook was received
     res.status(200).json({ status: 'ok' });
   } catch (error) {
     console.error('❌ Webhook Processing Error:', error);
@@ -303,22 +300,22 @@ app.get('/api/admin/bookings', async (req, res) => {
   }
 });
 
-// ADMIN: Update booking status & Send Email to Client
+// ADMIN: Update booking status & Send Email
 app.patch('/api/admin/bookings/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { status, customNote, meetLink } = req.body;
 
-    // Prepare update payload (storing meetLink if provided)
     const updateData = { status };
     if (meetLink !== undefined) {
       updateData.meetLink = meetLink;
     }
 
+    // FIXED: Updated option from { new: true } to { returnDocument: 'after' }
     const updatedBooking = await Booking.findByIdAndUpdate(
       id,
       updateData,
-      { new: true }
+      { returnDocument: 'after' }
     );
 
     if (!updatedBooking) {
