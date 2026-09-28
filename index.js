@@ -8,17 +8,83 @@ require('dotenv').config();
 
 const app = express();
 
-// 1. Middlewares
+// 1. Middlewares & Raw Webhook Handling
+
+// CORS configuration
 app.use(cors());
 
-// Capture raw body for webhook verification before express.json() parses it
-app.use(
-  express.json({
-    verify: (req, res, buf) => {
-      req.rawBody = buf;
-    },
-  })
+// Webhook endpoint MUST consume raw buffer before express.json() parses request bodies
+app.post(
+  '/api/webhooks/razorpay',
+  express.raw({ type: 'application/json' }),
+  async (req, res) => {
+    try {
+      const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+      const signature = req.headers['x-razorpay-signature'];
+
+      if (!webhookSecret) {
+        console.error('❌ RAZORPAY_WEBHOOK_SECRET is missing in environment variables.');
+        return res.status(500).json({ success: false, error: 'Server webhook configuration error' });
+      }
+
+      if (!signature) {
+        return res.status(400).json({ success: false, error: 'Missing x-razorpay-signature header' });
+      }
+
+      // Compute HMAC signature on raw buffer (req.body)
+      const expectedSignature = crypto
+        .createHmac('sha256', webhookSecret)
+        .update(req.body)
+        .digest('hex');
+
+      if (expectedSignature !== signature) {
+        console.warn('⚠️ Invalid Razorpay webhook signature');
+        return res.status(400).json({ success: false, error: 'Invalid webhook signature' });
+      }
+
+      const eventData = JSON.parse(req.body.toString());
+      const event = eventData.event;
+
+      if (event === 'payment.captured' || event === 'order.paid') {
+        const payment = eventData.payload.payment.entity;
+        const orderId = payment.order_id;
+        const paymentId = payment.id;
+        const bookingId = payment.notes?.bookingId;
+
+        let booking = null;
+        if (bookingId) {
+          booking = await Booking.findById(bookingId);
+        } else if (orderId) {
+          booking = await Booking.findOne({ orderId });
+        }
+
+        if (booking) {
+          const wasConfirmed = booking.status === 'Confirmed';
+
+          booking.status = 'Confirmed';
+          booking.paymentId = paymentId;
+          booking.orderId = orderId;
+          await booking.save();
+
+          if (!wasConfirmed) {
+            console.log(`✅ Webhook confirmed Booking ID: ${booking._id}`);
+            sendConfirmationEmail(booking, paymentId).catch((err) =>
+              console.error('Webhook Email error:', err)
+            );
+          }
+        }
+      }
+
+      res.status(200).json({ status: 'ok' });
+    } catch (error) {
+      console.error('❌ Webhook Processing Error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
 );
+
+// Standard JSON Parser for all other endpoints
+app.use(express.json());
 
 console.log("--- RAZORPAY KEY CHECK ---");
 console.log("Key ID:", process.env.RAZORPAY_KEY_ID);
@@ -32,20 +98,20 @@ const razorpay = new Razorpay({
   key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
 
-// 3. Nodemailer Transporter Setup (Updated with Timeouts & Non-blocking Settings)
+// 3. Nodemailer Transporter Setup (Updated for Render: Port 465 SSL)
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
-  port: 587,
-  secure: false, // TLS / STARTTLS required for port 587
-  connectionTimeout: 10000, // 10 seconds timeout
+  port: 465,
+  secure: true, // SSL required for port 465 (bypasses Render's port 587 STARTTLS blocking)
+  connectionTimeout: 10000,
   greetingTimeout: 5000,
   socketTimeout: 10000,
   auth: {
     user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS, // Google App Password required
+    pass: process.env.EMAIL_PASS, // 16-character Google App Password required
   },
   tls: {
-    rejectUnauthorized: false, // Prevents drops during local/host cert checks
+    rejectUnauthorized: false, // Prevents drops during cert checks
   },
 });
 
@@ -229,70 +295,6 @@ app.post('/api/payments/verify', async (req, res) => {
   }
 });
 
-// RAZORPAY WEBHOOK
-app.post('/api/webhooks/razorpay', async (req, res) => {
-  try {
-    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
-    const signature = req.headers['x-razorpay-signature'];
-
-    if (!webhookSecret) {
-      console.error('❌ RAZORPAY_WEBHOOK_SECRET is missing in environment variables.');
-      return res.status(500).json({ success: false, error: 'Server webhook configuration error' });
-    }
-
-    if (!signature) {
-      return res.status(400).json({ success: false, error: 'Missing x-razorpay-signature header' });
-    }
-
-    const expectedSignature = crypto
-      .createHmac('sha256', webhookSecret)
-      .update(req.rawBody)
-      .digest('hex');
-
-    if (expectedSignature !== signature) {
-      console.warn('⚠️ Invalid Razorpay webhook signature');
-      return res.status(400).json({ success: false, error: 'Invalid webhook signature' });
-    }
-
-    const event = req.body.event;
-
-    if (event === 'payment.captured' || event === 'order.paid') {
-      const payment = req.body.payload.payment.entity;
-      const orderId = payment.order_id;
-      const paymentId = payment.id;
-      const bookingId = payment.notes?.bookingId;
-
-      let booking = null;
-      if (bookingId) {
-        booking = await Booking.findById(bookingId);
-      } else if (orderId) {
-        booking = await Booking.findOne({ orderId });
-      }
-
-      if (booking) {
-        const wasConfirmed = booking.status === 'Confirmed';
-
-        booking.status = 'Confirmed';
-        booking.paymentId = paymentId;
-        booking.orderId = orderId;
-        await booking.save();
-
-        if (!wasConfirmed) {
-          console.log(`✅ Webhook confirmed Booking ID: ${booking._id}`);
-          sendConfirmationEmail(booking, paymentId).catch((err) =>
-            console.error('Webhook Email error:', err)
-          );
-        }
-      }
-    }
-
-    res.status(200).json({ status: 'ok' });
-  } catch (error) {
-    console.error('❌ Webhook Processing Error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 // ADMIN: Fetch all bookings
 app.get('/api/admin/bookings', async (req, res) => {
   try {
@@ -303,7 +305,7 @@ app.get('/api/admin/bookings', async (req, res) => {
   }
 });
 
-// ADMIN: Update booking status & Send Email (Async & Non-blocking)
+// ADMIN: Update booking status & Send Email
 app.patch('/api/admin/bookings/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -324,10 +326,10 @@ app.patch('/api/admin/bookings/:id', async (req, res) => {
       return res.status(404).json({ success: false, error: 'Booking not found' });
     }
 
-    // 1. Immediately return response to unblock the frontend UI
+    // Return response immediately
     res.json({ success: true, booking: updatedBooking });
 
-    // 2. Dispatch email asynchronously in the background
+    // Send email asynchronously
     if (status === 'Confirmed' || status === 'Cancelled') {
       const isConfirmed = status === 'Confirmed';
 
@@ -388,7 +390,6 @@ app.patch('/api/admin/bookings/:id', async (req, res) => {
         `,
       };
 
-      // Non-blocking promise execution
       transporter.sendMail(mailOptions)
         .then((info) => console.log(`📧 Email sent successfully! Message ID: ${info.messageId}`))
         .catch((mailErr) => console.error('❌ Failed to send status update email:', mailErr));
