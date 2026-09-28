@@ -32,14 +32,17 @@ const razorpay = new Razorpay({
   key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
 
-// 3. Nodemailer Transporter Setup (Updated to Port 587 / STARTTLS)
+// 3. Nodemailer Transporter Setup (Updated with Timeouts & Non-blocking Settings)
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
   port: 587,
   secure: false, // TLS / STARTTLS required for port 587
+  connectionTimeout: 10000, // 10 seconds timeout
+  greetingTimeout: 5000,
+  socketTimeout: 10000,
   auth: {
     user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
+    pass: process.env.EMAIL_PASS, // Google App Password required
   },
   tls: {
     rejectUnauthorized: false, // Prevents drops during local/host cert checks
@@ -300,7 +303,7 @@ app.get('/api/admin/bookings', async (req, res) => {
   }
 });
 
-// ADMIN: Update booking status & Send Email
+// ADMIN: Update booking status & Send Email (Async & Non-blocking)
 app.patch('/api/admin/bookings/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -311,7 +314,6 @@ app.patch('/api/admin/bookings/:id', async (req, res) => {
       updateData.meetLink = meetLink;
     }
 
-    // FIXED: Updated option from { new: true } to { returnDocument: 'after' }
     const updatedBooking = await Booking.findByIdAndUpdate(
       id,
       updateData,
@@ -322,6 +324,10 @@ app.patch('/api/admin/bookings/:id', async (req, res) => {
       return res.status(404).json({ success: false, error: 'Booking not found' });
     }
 
+    // 1. Immediately return response to unblock the frontend UI
+    res.json({ success: true, booking: updatedBooking });
+
+    // 2. Dispatch email asynchronously in the background
     if (status === 'Confirmed' || status === 'Cancelled') {
       const isConfirmed = status === 'Confirmed';
 
@@ -382,17 +388,17 @@ app.patch('/api/admin/bookings/:id', async (req, res) => {
         `,
       };
 
-      try {
-        const info = await transporter.sendMail(mailOptions);
-        console.log(`📧 Email sent successfully! Message ID: ${info.messageId}`);
-      } catch (mailErr) {
-        console.error('❌ Failed to send status update email:', mailErr);
-      }
+      // Non-blocking promise execution
+      transporter.sendMail(mailOptions)
+        .then((info) => console.log(`📧 Email sent successfully! Message ID: ${info.messageId}`))
+        .catch((mailErr) => console.error('❌ Failed to send status update email:', mailErr));
     }
 
-    res.json({ success: true, booking: updatedBooking });
   } catch (error) {
-    res.status(400).json({ success: false, error: error.message });
+    console.error('Error updating booking:', error);
+    if (!res.headersSent) {
+      res.status(400).json({ success: false, error: error.message });
+    }
   }
 });
 
