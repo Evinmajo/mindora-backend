@@ -102,16 +102,18 @@ const razorpay = new Razorpay({
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
   port: 465,
-  secure: true, // SSL required for port 465 (bypasses Render's port 587 STARTTLS blocking)
+  secure: true,
   connectionTimeout: 10000,
   greetingTimeout: 5000,
   socketTimeout: 10000,
   auth: {
     user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS, // 16-character Google App Password required
+    pass: process.env.EMAIL_PASS,
   },
+  // Force IPv4 resolution to prevent ENETUNREACH on Render
+  family: 4, 
   tls: {
-    rejectUnauthorized: false, // Prevents drops during cert checks
+    rejectUnauthorized: false,
   },
 });
 
