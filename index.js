@@ -99,22 +99,18 @@ const razorpay = new Razorpay({
 });
 
 // 3. Nodemailer Transporter Setup (Updated for Render: Port 465 SSL)
+// 3. Nodemailer Transporter Setup - Brevo SMTP
 const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 465,
-  secure: true,
-  connectionTimeout: 10000,
-  greetingTimeout: 5000,
-  socketTimeout: 10000,
+  host: process.env.SMTP_HOST,
+  port: 587,
+  secure: false,
   auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
   },
-  // Force IPv4 resolution to prevent ENETUNREACH on Render
-  family: 4, 
-  tls: {
-    rejectUnauthorized: false,
-  },
+  connectionTimeout: 15000,
+  greetingTimeout: 10000,
+  socketTimeout: 15000,
 });
 
 // Verify mailer connection on startup
