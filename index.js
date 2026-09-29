@@ -116,33 +116,6 @@ app.post(
 // Normal JSON parser for other routes
 app.use(express.json());
 
-// =====================================================
-// 2. RAZORPAY CONFIGURATION CHECK
-// =====================================================
-
-console.log('--- RAZORPAY KEY CHECK ---');
-
-console.log(
-  'Key ID:',
-  process.env.RAZORPAY_KEY_ID
-);
-
-console.log(
-  'Key Secret Present?:',
-  process.env.RAZORPAY_KEY_SECRET ? 'YES' : 'NO'
-);
-
-console.log(
-  'Webhook Secret Present?:',
-  process.env.RAZORPAY_WEBHOOK_SECRET ? 'YES' : 'NO'
-);
-
-console.log('---------------------------');
-
-// =====================================================
-// 3. RAZORPAY INSTANCE
-// =====================================================
-
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
   key_secret: process.env.RAZORPAY_KEY_SECRET,
