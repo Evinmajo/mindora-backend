@@ -746,274 +746,79 @@ app.get(
   }
 );
 
-// =====================================================
-// 15. ADMIN - UPDATE BOOKING STATUS
-// =====================================================
+app.patch('/api/admin/bookings/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, customNote, meetLink } = req.body;
 
-app.patch(
-  '/api/admin/bookings/:id',
-  async (req, res) => {
-    try {
-      const { id } = req.params;
+    const adminMessage = typeof customNote === 'string' ? customNote.trim() : '';
 
-      const {
-        status,
-        customNote,
-        meetLink,
-      } = req.body;
+    const updateData = { status };
+    if (meetLink !== undefined) updateData.meetLink = meetLink;
 
-      const updateData = {
-        status,
-      };
+    const updatedBooking = await Booking.findByIdAndUpdate(id, updateData, { returnDocument: 'after' });
+    if (!updatedBooking) return res.status(404).json({ success: false, error: 'Booking not found' });
 
-      if (meetLink !== undefined) {
-        updateData.meetLink =
-          meetLink;
-      }
+    res.json({ success: true, booking: updatedBooking });
 
-      const updatedBooking =
-        await Booking.findByIdAndUpdate(
-          id,
-          updateData,
-          {
-            returnDocument: 'after',
-          }
-        );
+    if (status === 'Confirmed' || status === 'Cancelled') {
+      const isConfirmed = status === 'Confirmed';
+      const subject = isConfirmed 
+        ? `Booking Confirmed — ${updatedBooking.service}` 
+        : `Booking Update — Request Cancelled`;
 
-      if (!updatedBooking) {
-        return res.status(404).json({
-          success: false,
-          error: 'Booking not found',
-        });
-      }
-
-      // Return response immediately
-      res.json({
-        success: true,
-        booking: updatedBooking,
-      });
-
-      // Send email asynchronously
-      if (
-        status === 'Confirmed' ||
-        status === 'Cancelled'
-      ) {
-        const isConfirmed =
-          status === 'Confirmed';
-
-        const subject = isConfirmed
-          ? `Booking Confirmed — ${updatedBooking.service}`
-          : `Booking Update — Request Cancelled`;
-
-        const html = `
-          <div style="
-            font-family: Arial, sans-serif;
-            max-width: 600px;
-            margin: 0 auto;
-            color: #1f2937;
-            border: 1px solid #e5e7eb;
-            border-radius: 12px;
-            padding: 24px;
-          ">
-
-            <h2 style="
-              color: ${
-                isConfirmed
-                  ? '#15803d'
-                  : '#b91c1c'
-              };
-              margin-top: 0;
-            ">
-
-              ${
-                isConfirmed
-                  ? 'Your Appointment is Confirmed!'
-                  : 'Appointment Cancellation Notice'
-              }
-
-            </h2>
-
-            <p>
-              Dear ${updatedBooking.name},
-            </p>
-
-            <p>
-              ${
-                isConfirmed
-                  ? `Your consultation request has been officially <strong>confirmed</strong>. Here are your booking details:`
-                  : `We regret to inform you that your booking request could not be accepted.`
-              }
-            </p>
-
-            <div style="
-              background-color: #f9fafb;
-              padding: 16px;
-              border-radius: 8px;
-              margin: 16px 0;
-              font-size: 14px;
-              line-height: 1.6;
-            ">
-
-              <p style="margin: 4px 0;">
-                <strong>Service:</strong>
-                ${updatedBooking.service}
-              </p>
-
-              <p style="margin: 4px 0;">
-                <strong>Duration:</strong>
-                ${updatedBooking.minutes}
-                mins (${updatedBooking.price})
-              </p>
-
-              <p style="margin: 4px 0;">
-                <strong>Date:</strong>
-                ${updatedBooking.date}
-              </p>
-
-              <p style="margin: 4px 0;">
-                <strong>Time:</strong>
-                ${updatedBooking.time}
-              </p>
-
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1f2937; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px;">
+          <h2 style="color: ${isConfirmed ? '#15803d' : '#b91c1c'}; margin-top: 0;">
+            ${isConfirmed ? 'Your Appointment is Confirmed!' : 'Appointment Cancellation Notice'}
+          </h2>
+          <p>Dear ${updatedBooking.name},</p>
+          <p>
+            ${isConfirmed 
+              ? 'Your consultation request has been officially <strong>confirmed</strong>. Here are your booking details:' 
+              : 'We regret to inform you that your booking request could not be accepted.'}
+          </p>
+          
+          <!-- ADMIN CUSTOM NOTE (Placed here so Gmail parser reads it as primary content) -->
+          ${adminMessage ? `
+            <div style="background-color: #fef3c7; border: 1px solid #fcd34d; padding: 14px; border-radius: 8px; font-size: 14px; color: #92400e; margin: 16px 0; white-space: pre-wrap;">
+              <strong>Message from admin:</strong><br />${adminMessage}
             </div>
+          ` : ''}
 
-            ${
-              isConfirmed &&
-              meetLink
-                ? `
-                  <div style="
-                    background-color: #ecfdf5;
-                    border: 1px solid #a7f3d0;
-                    padding: 18px;
-                    border-radius: 8px;
-                    margin: 16px 0;
-                    text-align: center;
-                  ">
-
-                    <p style="
-                      margin: 0 0 10px 0;
-                      font-size: 14px;
-                      font-weight: bold;
-                      color: #065f46;
-                    ">
-                      Google Meet Session Link
-                    </p>
-
-                    <a
-                      href="${meetLink}"
-                      target="_blank"
-                      style="
-                        display: inline-block;
-                        background-color: #059669;
-                        color: #ffffff;
-                        text-decoration: none;
-                        padding: 10px 22px;
-                        border-radius: 6px;
-                        font-weight: bold;
-                        font-size: 14px;
-                      "
-                    >
-                      Join Meeting
-                    </a>
-
-                    <p style="
-                      margin: 10px 0 0 0;
-                      font-size: 12px;
-                      color: #047857;
-                    ">
-                      Direct URL:
-                      <a
-                        href="${meetLink}"
-                        style="color: #047857;"
-                      >
-                        ${meetLink}
-                      </a>
-                    </p>
-
-                  </div>
-                `
-                : ''
-            }
-
-            ${
-              customNote
-                ? `
-                  <p style="
-                    background-color: #fef3c7;
-                    padding: 12px;
-                    border-radius: 6px;
-                    font-size: 13px;
-                    color: #92400e;
-                  ">
-                    <strong>
-                      Message from admin:
-                    </strong>
-
-                    ${customNote}
-                  </p>
-                `
-                : ''
-            }
-
-            <p style="
-              margin-top: 20px;
-            ">
-
-              ${
-                isConfirmed
-                  ? meetLink
-                    ? 'Please join the meeting link above at your scheduled appointment time.'
-                    : 'We will send the online meeting link shortly prior to the session time.'
-                  : 'If you wish to reschedule or have any questions, feel free to reply to this email.'
-              }
-
-            </p>
-
-            <hr style="
-              border: 0;
-              border-top: 1px solid #e5e7eb;
-              margin: 24px 0;
-            " />
-
-            <p style="
-              font-size: 12px;
-              color: #6b7280;
-              text-align: center;
-            ">
-              Mindora Health & Wellbeing
-            </p>
-
+          <div style="background-color: #f9fafb; padding: 16px; border-radius: 8px; margin: 16px 0; font-size: 14px; line-height: 1.6;">
+            <p style="margin: 4px 0;"><strong>Service:</strong> ${updatedBooking.service}</p>
+            <p style="margin: 4px 0;"><strong>Duration:</strong> ${updatedBooking.minutes} mins (${updatedBooking.price})</p>
+            <p style="margin: 4px 0;"><strong>Date:</strong> ${updatedBooking.date}</p>
+            <p style="margin: 4px 0;"><strong>Time:</strong> ${updatedBooking.time}</p>
+            ${updatedBooking.note ? `<p style="margin: 4px 0;"><strong>Booking Description:</strong> ${updatedBooking.note}</p>` : ''}
           </div>
-        `;
 
-        sendBrevoEmail({
-          to: updatedBooking.email,
-          toName:
-            updatedBooking.name,
-          subject,
-          html,
-        }).catch((mailErr) =>
-          console.error(
-            '❌ Failed to send status update email:',
-            mailErr
-          )
-        );
-      }
-    } catch (error) {
-      console.error(
-        'Error updating booking:',
-        error
-      );
+          ${isConfirmed && meetLink ? `
+            <div style="background-color: #ecfdf5; border: 1px solid #a7f3d0; padding: 18px; border-radius: 8px; margin: 16px 0; text-align: center;">
+              <p style="margin: 0 0 10px 0; font-size: 14px; font-weight: bold; color: #065f46;">Google Meet Session Link</p>
+              <a href="${meetLink}" target="_blank" style="display: inline-block; background-color: #059669; color: #ffffff; text-decoration: none; padding: 10px 22px; border-radius: 6px; font-weight: bold; font-size: 14px;">Join Meeting</a>
+              <p style="margin: 10px 0 0 0; font-size: 12px; color: #047857;">Direct URL: <a href="${meetLink}" style="color: #047857;">${meetLink}</a></p>
+            </div>
+          ` : ''}
 
-      if (!res.headersSent) {
-        res.status(400).json({
-          success: false,
-          error: error.message,
-        });
-      }
+          <p style="margin-top: 20px;">
+            ${isConfirmed 
+              ? (meetLink ? 'Please join the meeting link above at your scheduled appointment time.' : 'We will send the online meeting link shortly prior to the session time.') 
+              : 'If you wish to reschedule or have any questions, feel free to reply to this email.'}
+          </p>
+          <hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
+          <p style="font-size: 12px; color: #6b7280; text-align: center;">Mindora Health & Wellbeing</p>
+        </div>`;
+
+      sendBrevoEmail({ to: updatedBooking.email, toName: updatedBooking.name, subject, html })
+        .catch((mailErr) => console.error('❌ Failed to send status update email:', mailErr));
     }
+  } catch (error) {
+    console.error('Error updating booking:', error);
+    if (!res.headersSent) res.status(400).json({ success: false, error: error.message });
   }
-);
+});
 
 // =====================================================
 // 16. ADMIN - DELETE BOOKING
