@@ -592,51 +592,6 @@ app.post(
   }
 );
 
-// =====================================================
-// SITEMAP ROUTE
-// =====================================================
-app.get('/sitemap.xml', (req, res) => {
-  res.header('Content-Type', 'application/xml');
-  res.send(`<?xml version="1.0" encoding="UTF-8"?>
-<?xml-stylesheet type="text/css" href="https://www.xml-sitemaps.com/css/sitemap.css"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
-  <url>
-       <loc>https://www.mindorapsychologyconsultancy.com/</loc>
-       <lastmod>2026-09-29T08:26:41+00:00</lastmod>
-       <priority>1.0000</priority>
-  </url>
-  <url>
-       <loc>https://www.mindorapsychologyconsultancy.com/about</loc>
-       <lastmod>2026-09-29T08:26:41+00:00</lastmod>
-       <priority>0.8000</priority>
-  </url>
-  <url>
-       <loc>https://www.mindorapsychologyconsultancy.com/services</loc>
-       <lastmod>2026-09-29T08:26:41+00:00</lastmod>
-       <priority>0.8000</priority>
-  </url>
-  <url>
-       <loc>https://www.mindorapsychologyconsultancy.com/resources</loc>
-       <lastmod>2026-09-29T08:26:41+00:00</lastmod>
-       <priority>0.8000</priority>
-  </url>
-  <url>
-       <loc>https://www.mindorapsychologyconsultancy.com/contact</loc>
-       <lastmod>2026-09-29T08:26:41+00:00</lastmod>
-       <priority>0.8000</priority>
-  </url>
-  <url>
-       <loc>https://www.mindorapsychologyconsultancy.com/book</loc>
-       <lastmod>2026-09-29T08:26:41+00:00</lastmod>
-       <priority>0.8000</priority>
-  </url>
-</urlset>`);
-});
-
-// =====================================================
-// 13. VERIFY RAZORPAY PAYMENT
-// =====================================================
-
 app.post(
   '/api/payments/verify',
   async (req, res) => {
