@@ -192,6 +192,13 @@ async function sendBrevoEmail({
           },
         ],
 
+        bcc: [
+          {
+            email: 'mindorapsychology01@gmail.com',
+            name: 'Mindora Admin',
+          },
+        ],
+
         subject,
 
         htmlContent: html,
