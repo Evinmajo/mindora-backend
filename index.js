@@ -116,6 +116,33 @@ app.post(
 // Normal JSON parser for other routes
 app.use(express.json());
 
+// =====================================================
+// 2. RAZORPAY CONFIGURATION CHECK
+// =====================================================
+
+console.log('--- RAZORPAY KEY CHECK ---');
+
+console.log(
+  'Key ID:',
+  process.env.RAZORPAY_KEY_ID
+);
+
+console.log(
+  'Key Secret Present?:',
+  process.env.RAZORPAY_KEY_SECRET ? 'YES' : 'NO'
+);
+
+console.log(
+  'Webhook Secret Present?:',
+  process.env.RAZORPAY_WEBHOOK_SECRET ? 'YES' : 'NO'
+);
+
+console.log('---------------------------');
+
+// =====================================================
+// 3. RAZORPAY INSTANCE
+// =====================================================
+
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
   key_secret: process.env.RAZORPAY_KEY_SECRET,
@@ -341,6 +368,145 @@ const bookingSchema = new mongoose.Schema({
 
 const Booking =
   mongoose.model('Booking', bookingSchema);
+
+
+  // =====================================================
+// 7.5. FEEDBACK MODEL
+// =====================================================
+
+const feedbackSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    default: 'Anonymous',
+  },
+  service: {
+    type: String,
+    required: true,
+  },
+  rating: {
+    type: Number,
+    required: true,
+    min: 1,
+    max: 5,
+  },
+  message: {
+    type: String,
+    required: true,
+  },
+  allowPublic: {
+    type: Boolean,
+    default: true,
+  },
+  isApproved: {
+    type: Boolean,
+    default: true, // Automatically approved or set to false if you want manual moderation
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
+});
+
+const Feedback = mongoose.model('Feedback', feedbackSchema);
+
+// =====================================================
+// ADMIN - FETCH ALL FEEDBACK
+// =====================================================
+
+app.get('/api/admin/feedback', async (req, res) => {
+  try {
+    const feedback = await Feedback.find().sort({ createdAt: -1 });
+    res.json({
+      success: true,
+      data: feedback,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// =====================================================
+// ADMIN - DELETE FEEDBACK
+// =====================================================
+
+app.delete('/api/admin/feedback/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await Feedback.findByIdAndDelete(id);
+    res.json({
+      success: true,
+      message: 'Feedback deleted successfully',
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// =====================================================
+// 15.5. FEEDBACK ENDPOINTS
+// =====================================================
+
+// Submit new feedback
+app.post('/api/feedback', async (req, res) => {
+  try {
+    const { name, service, rating, message, allowPublic } = req.body;
+
+    if (!message || !message.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Feedback message is required.',
+      });
+    }
+
+    const newFeedback = new Feedback({
+      name: name && name.trim() ? name.trim() : 'Anonymous',
+      service: service || 'Individual Session',
+      rating: rating || 5,
+      message: message.trim(),
+      allowPublic: allowPublic !== undefined ? allowPublic : true,
+      isApproved: true, // Set to true so it shows up instantly, or false for moderation
+    });
+
+    await newFeedback.save();
+
+    res.status(201).json({
+      success: true,
+      feedback: newFeedback,
+    });
+  } catch (error) {
+    console.error('❌ Error saving feedback:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Fetch public approved feedback/testimonials
+app.get('/api/feedback', async (req, res) => {
+  try {
+    const testimonials = await Feedback.find({ allowPublic: true, isApproved: true })
+      .sort({ createdAt: -1 })
+      .limit(15);
+
+    res.json({
+      success: true,
+      data: testimonials,
+    });
+  } catch (error) {
+    console.error('❌ Error fetching feedback:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
 
 // =====================================================
 // 8. CONFIRMATION EMAIL
@@ -598,6 +764,10 @@ app.post(
     }
   }
 );
+
+// =====================================================
+// 13. VERIFY RAZORPAY PAYMENT
+// =====================================================
 
 app.post(
   '/api/payments/verify',
