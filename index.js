@@ -422,6 +422,30 @@ app.delete('/api/admin/feedback/:id', async (req, res) => {
 });
 
 // =====================================================
+// ADMIN - TOGGLE FEEDBACK HOMEPAGE VISIBILITY
+// =====================================================
+
+app.patch('/api/admin/feedback/:id/toggle', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const feedback = await Feedback.findById(id);
+
+    if (!feedback) {
+      return res.status(404).json({ success: false, error: 'Feedback not found' });
+    }
+
+    // Toggle the isApproved / show on home status
+    feedback.isApproved = !feedback.isApproved;
+    await feedback.save();
+
+    res.json({ success: true, feedback });
+  } catch (error) {
+    console.error('❌ Error toggling feedback visibility:', error);
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+// =====================================================
 // 15.5. FEEDBACK ENDPOINTS
 // =====================================================
 
